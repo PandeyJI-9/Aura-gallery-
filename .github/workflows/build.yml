@@ -75,8 +75,8 @@ jobs:
                   applicationId = "com.pandeyji.aura.gallery"
                   minSdk = 28
                   targetSdk = 34
-                  versionCode = 2
-                  versionName = "4.2.0"
+                  versionCode = 3
+                  versionName = "4.3.0"
               }
 
               buildFeatures {
@@ -168,6 +168,7 @@ jobs:
           enum class ViewMode {
               ALL_MEDIA,
               ALBUMS,
+              ALBUM_DETAIL,
               FAVORITES
           }
           EOF
@@ -178,8 +179,11 @@ jobs:
               androidx.compose.foundation.ExperimentalFoundationApi::class,
               androidx.compose.material3.ExperimentalMaterial3Api::class
           )
+          
           package com.pandeyji.aura.gallery
-
+          
+          import android.content.Intent
+          import android.net.Uri
           import android.view.ViewGroup
           import androidx.compose.animation.*
           import androidx.compose.animation.core.*
@@ -203,18 +207,25 @@ jobs:
           import androidx.compose.ui.platform.*
           import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.*
           import androidx.compose.ui.viewinterop.AndroidView
           import androidx.lifecycle.Lifecycle
           import androidx.lifecycle.LifecycleEventObserver
           import androidx.media3.common.MediaItem
           import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.ui.AspectRatioFrameLayout
           import androidx.media3.ui.PlayerView
           import coil.compose.AsyncImage
           import coil.request.ImageRequest
           import dev.chrisbanes.haze.*
           import kotlinx.coroutines.launch
-
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          
+          // ==================== PANDEY JI GLOW ====================
+          
           @Composable
           fun PandeyJiGlow() {
               val anim = rememberInfiniteTransition(label = "glow")
@@ -231,7 +242,9 @@ jobs:
                   fontWeight = FontWeight.ExtraBold
               )
           }
-
+          
+          // ==================== TOP BAR ====================
+          
           @Composable
           fun TopBar(
               screen: String,
@@ -245,14 +258,20 @@ jobs:
               val haptic = LocalHapticFeedback.current
               val offsetY by animateDpAsState(
                   targetValue = if (isScrolling) (-100).dp else 0.dp,
-                  animationSpec = tween(300),
+                  animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
                   label = "topBarSlide"
               )
+              val topBarAlpha by animateFloatAsState(
+                  targetValue = if (isScrolling) 0f else 1f,
+                  animationSpec = tween(250),
+                  label = "topBarAlpha"
+              )
               var searchQuery by remember { mutableStateOf("") }
-
+          
               Box(
                   modifier = modifier
                       .offset(y = offsetY)
+                      .graphicsLayer(alpha = topBarAlpha)
                       .padding(top = 16.dp, start = 20.dp, end = 20.dp)
                       .fillMaxWidth()
                       .height(56.dp)
@@ -281,7 +300,7 @@ jobs:
                               searchQuery = it
                               onSearchChange(it)
                           },
-                          placeholder = { Text("Smart Search...", color = Color.Gray, fontSize = 14.sp) },
+                          placeholder = { Text("Search photos, albums...", color = Color.Gray, fontSize = 14.sp) },
                           modifier = Modifier
                               .weight(1f)
                               .padding(start = 8.dp),
@@ -294,6 +313,17 @@ jobs:
                           textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
                           singleLine = true
                       )
+                      // Clear button when search is active
+                      if (searchQuery.isNotEmpty()) {
+                          IconButton(
+                              onClick = {
+                                  searchQuery = ""
+                                  onSearchChange("")
+                              }
+                          ) {
+                              Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                          }
+                      }
                       IconButton(
                           onClick = {
                               haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -310,7 +340,9 @@ jobs:
                   }
               }
           }
-
+          
+          // ==================== ALBUM FILTER CHIPS ====================
+          
           @Composable
           fun AlbumFilterChips(
               currentMode: ViewMode,
@@ -352,7 +384,9 @@ jobs:
                   }
               }
           }
-
+          
+          // ==================== BOTTOM DOCK ====================
+          
           @Composable
           fun BottomDock(
               screen: String,
@@ -365,13 +399,19 @@ jobs:
               val haptic = LocalHapticFeedback.current
               val offsetY by animateDpAsState(
                   targetValue = if (isScrolling) 100.dp else 0.dp,
-                  animationSpec = tween(300),
+                  animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
                   label = "bottomDockSlide"
               )
-
+              val dockAlpha by animateFloatAsState(
+                  targetValue = if (isScrolling) 0f else 1f,
+                  animationSpec = tween(250),
+                  label = "dockAlpha"
+              )
+          
               Box(
                   modifier = modifier
                       .offset(y = offsetY)
+                      .graphicsLayer(alpha = dockAlpha)
                       .padding(bottom = 20.dp, start = 24.dp, end = 24.dp)
                       .fillMaxWidth()
                       .height(68.dp)
@@ -409,7 +449,7 @@ jobs:
                   }
               }
           }
-
+          
           @Composable
           fun DockButton(
               icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -417,16 +457,40 @@ jobs:
               isActive: Boolean,
               onClick: () -> Unit
           ) {
-              val scale by animateFloatAsState(if (isActive) 1.2f else 1f, label = "scale")
+              val scale by animateFloatAsState(
+                  targetValue = if (isActive) 1.2f else 1f,
+                  animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                  label = "scale"
+              )
               val tint by animateColorAsState(
-                  if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+                  targetValue = if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+                  animationSpec = tween(300),
                   label = "tint"
               )
-              IconButton(onClick = onClick, modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)) {
-                  Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+              val labelAlpha by animateFloatAsState(
+                  targetValue = if (isActive) 1f else 0.5f,
+                  animationSpec = tween(300),
+                  label = "labelAlpha"
+              )
+              Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+              ) {
+                  IconButton(onClick = onClick) {
+                      Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+                  }
+                  Text(
+                      text = label,
+                      color = tint.copy(alpha = labelAlpha),
+                      fontSize = 9.sp,
+                      fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+                      modifier = Modifier.offset(y = (-8).dp)
+                  )
               }
           }
-
+          
+          // ==================== SETTINGS HUB ====================
+          
           @Composable
           fun SettingsHub(blurVal: Float, onBlurChange: (Float) -> Unit, hazeState: HazeState) {
               Column(
@@ -463,7 +527,9 @@ jobs:
                   PandeyJiGlow()
               }
           }
-
+          
+          // ==================== GALLERY GRID ====================
+          
           @Composable
           fun GalleryGrid(
               mediaList: List<Media>,
@@ -472,7 +538,10 @@ jobs:
               gridState: LazyGridState,
               viewMode: ViewMode,
               albums: List<Album>,
-              onMediaClick: (Int) -> Unit
+              selectedAlbum: Album?,
+              onMediaClick: (Int) -> Unit,
+              onAlbumClick: (Album) -> Unit,
+              onBackFromAlbum: () -> Unit
           ) {
               when (viewMode) {
                   ViewMode.ALL_MEDIA -> {
@@ -486,23 +555,7 @@ jobs:
                               contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp)
                           ) {
                               itemsIndexed(mediaList) { index, media ->
-                                  Box(
-                                      modifier = Modifier
-                                          .aspectRatio(1f)
-                                          .padding(1.dp)
-                                          .clickable { onMediaClick(index) },
-                                      contentAlignment = Alignment.Center
-                                  ) {
-                                      AsyncImage(
-                                          model = ImageRequest.Builder(LocalContext.current).data(media.uri).crossfade(true).build(),
-                                          contentDescription = null,
-                                          contentScale = ContentScale.Crop,
-                                          modifier = Modifier.fillMaxSize()
-                                      )
-                                      if (media.isVideo) {
-                                          Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp).shadow(4.dp))
-                                      }
-                                  }
+                                  MediaGridItem(media = media, onClick = { onMediaClick(index) })
                               }
                           }
                       }
@@ -513,14 +566,68 @@ jobs:
                           modifier = Modifier.fillMaxSize().haze(state = hazeState),
                           contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 8.dp, end = 8.dp)
                       ) {
-                          items(albums.size) { index -> AlbumCard(albums[index]) }
+                          items(albums.size) { index ->
+                              AlbumCard(
+                                  album = albums[index],
+                                  onClick = { onAlbumClick(albums[index]) }
+                              )
+                          }
+                      }
+                  }
+                  ViewMode.ALBUM_DETAIL -> {
+                      val albumMedia = mediaList.filter { it.bucketId == selectedAlbum?.bucketId }
+                      Column(modifier = Modifier.fillMaxSize()) {
+                          // Album detail header with back button
+                          Row(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .padding(top = 80.dp, start = 16.dp, end = 16.dp, bottom = 8.dp),
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              IconButton(onClick = onBackFromAlbum) {
+                                  Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                              }
+                              Column(modifier = Modifier.padding(start = 8.dp)) {
+                                  Text(
+                                      text = selectedAlbum?.bucketName ?: "Album",
+                                      color = Color.White,
+                                      fontSize = 18.sp,
+                                      fontWeight = FontWeight.Bold
+                                  )
+                                  Text(
+                                      text = "${albumMedia.size} items",
+                                      color = Color.Gray,
+                                      fontSize = 12.sp
+                                  )
+                              }
+                          }
+                          LazyVerticalGrid(
+                              columns = GridCells.Fixed(4),
+                              modifier = Modifier.fillMaxSize().haze(state = hazeState),
+                              contentPadding = PaddingValues(bottom = 100.dp)
+                          ) {
+                              itemsIndexed(albumMedia) { _, media ->
+                                  val originalIndex = mediaList.indexOf(media)
+                                  MediaGridItem(media = media, onClick = { onMediaClick(originalIndex) })
+                              }
+                          }
                       }
                   }
                   ViewMode.FAVORITES -> {
                       val favorites = mediaList.filter { it.isFavorite }
                       if (favorites.isEmpty()) {
                           Box(modifier = Modifier.fillMaxSize().haze(state = hazeState), contentAlignment = Alignment.Center) {
-                              Text("No favorites yet", color = Color.White.copy(alpha = 0.5f))
+                              Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                  Icon(
+                                      Icons.Default.FavoriteBorder,
+                                      contentDescription = null,
+                                      tint = Color.White.copy(alpha = 0.3f),
+                                      modifier = Modifier.size(48.dp)
+                                  )
+                                  Spacer(Modifier.height(12.dp))
+                                  Text("No favorites yet", color = Color.White.copy(alpha = 0.5f))
+                                  Text("Tap ❤️ on any photo to add it here", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp)
+                              }
                           }
                       } else {
                           LazyVerticalGrid(
@@ -528,12 +635,13 @@ jobs:
                               modifier = Modifier.fillMaxSize().haze(state = hazeState),
                               contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp)
                           ) {
-                              itemsIndexed(favorites) { index, media ->
+                              itemsIndexed(favorites) { _, media ->
+                                  val originalIndex = mediaList.indexOf(media)
                                   Box(
                                       modifier = Modifier
                                           .aspectRatio(1f)
                                           .padding(1.dp)
-                                          .clickable { onMediaClick(mediaList.indexOf(media)) },
+                                          .clickable { onMediaClick(originalIndex) },
                                       contentAlignment = Alignment.Center
                                   ) {
                                       AsyncImage(
@@ -542,7 +650,15 @@ jobs:
                                           contentScale = ContentScale.Crop,
                                           modifier = Modifier.fillMaxSize()
                                       )
-                                      Icon(Icons.Default.Favorite, null, tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp).shadow(4.dp))
+                                      Icon(
+                                          Icons.Default.Favorite,
+                                          null,
+                                          tint = Color(0xFFFFD700),
+                                          modifier = Modifier
+                                              .size(18.dp)
+                                              .align(Alignment.BottomEnd)
+                                              .padding(4.dp)
+                                      )
                                   }
                               }
                           }
@@ -550,28 +666,82 @@ jobs:
                   }
               }
           }
-
+          
+          // ==================== MEDIA GRID ITEM ====================
+          
           @Composable
-          fun AlbumCard(album: Album) {
+          private fun MediaGridItem(media: Media, onClick: () -> Unit) {
+              val itemAlpha = remember { Animatable(0f) }
+              val itemScale = remember { Animatable(0.92f) }
+              LaunchedEffect(Unit) {
+                  launch { itemAlpha.animateTo(1f, tween(350)) }
+                  launch { itemScale.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
+              }
+              Box(
+                  modifier = Modifier
+                      .aspectRatio(1f)
+                      .padding(1.dp)
+                      .graphicsLayer(alpha = itemAlpha.value, scaleX = itemScale.value, scaleY = itemScale.value)
+                      .clickable(onClick = onClick),
+                  contentAlignment = Alignment.Center
+              ) {
+                  AsyncImage(
+                      model = ImageRequest.Builder(LocalContext.current).data(media.uri).crossfade(true).build(),
+                      contentDescription = media.displayName,
+                      contentScale = ContentScale.Crop,
+                      modifier = Modifier.fillMaxSize()
+                  )
+                  if (media.isVideo) {
+                      // Semi-transparent background for better visibility
+                      Box(
+                          modifier = Modifier
+                              .align(Alignment.Center)
+                              .size(32.dp)
+                              .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                      }
+                  }
+              }
+          }
+          
+          // ==================== ALBUM CARD ====================
+          
+          @Composable
+          fun AlbumCard(album: Album, onClick: () -> Unit) {
               Card(
-                  modifier = Modifier.fillMaxWidth().padding(6.dp).clip(RoundedCornerShape(14.dp)),
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(6.dp)
+                      .clip(RoundedCornerShape(14.dp))
+                      .clickable(onClick = onClick),
                   colors = CardDefaults.cardColors(containerColor = Color(0xFF181818))
               ) {
                   Column {
                       AsyncImage(
                           model = ImageRequest.Builder(LocalContext.current).data(album.thumbnailUri).crossfade(true).build(),
-                          contentDescription = null,
+                          contentDescription = album.bucketName,
                           contentScale = ContentScale.Crop,
                           modifier = Modifier.fillMaxWidth().height(140.dp)
                       )
                       Column(modifier = Modifier.padding(10.dp)) {
-                          Text(album.bucketName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                          Text(
+                              album.bucketName,
+                              color = Color.White,
+                              fontSize = 13.sp,
+                              fontWeight = FontWeight.Bold,
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis
+                          )
                           Text("${album.count} items", color = Color.Gray, fontSize = 11.sp)
                       }
                   }
               }
           }
-
+          
+          // ==================== MEDIA PAGER SCREEN ====================
+          
           @Composable
           fun MediaPagerScreen(
               mediaList: List<Media>,
@@ -581,7 +751,7 @@ jobs:
           ) {
               val pagerState = rememberPagerState(initialPage = initialIndex) { mediaList.size }
               var currentZoom by remember { mutableFloatStateOf(1f) }
-
+          
               HorizontalPager(
                   state = pagerState,
                   modifier = Modifier.fillMaxSize(),
@@ -600,8 +770,33 @@ jobs:
                       }
                   )
               }
+          
+              // Animated page indicator
+              Box(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(top = 48.dp),
+                  contentAlignment = Alignment.TopCenter
+              ) {
+                  AnimatedVisibility(
+                      visible = mediaList.size > 1,
+                      enter = fadeIn(tween(400)),
+                      exit = fadeOut(tween(300))
+                  ) {
+                      Text(
+                          text = "${pagerState.currentPage + 1} / ${mediaList.size}",
+                          color = Color.White.copy(alpha = 0.6f),
+                          fontSize = 12.sp,
+                          modifier = Modifier
+                              .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                              .padding(horizontal = 12.dp, vertical = 4.dp)
+                      )
+                  }
+              }
           }
-
+          
+          // ==================== MEDIA VIEWER (PHASE 1 REFINED) ====================
+          
           @Composable
           fun MediaViewer(
               media: Media,
@@ -616,119 +811,195 @@ jobs:
               var offset by remember { mutableStateOf(Offset.Zero) }
               var showOverlay by remember { mutableStateOf(true) }
               var isFavoritedLocal by remember { mutableStateOf(isFavorite) }
-
-              Box(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .background(Color.Black),
-                  contentAlignment = Alignment.Center
-              ) {
-                  val viewerModifier = Modifier
-                      .fillMaxSize()
-                      .graphicsLayer(
-                          scaleX = scale.value,
-                          scaleY = scale.value,
-                          translationX = offset.x,
-                          translationY = offset.y
-                      )
-                      .pointerInput(Unit) {
-                          detectTapGestures(
-                              onDoubleTap = {
-                                  scope.launch {
-                                      if (scale.value > 1f) {
-                                          scale.animateTo(1f, spring(dampingRatio = 0.8f))
-                                          offset = Offset.Zero
-                                          onZoomChanged(1f)
-                                      } else {
-                                          scale.animateTo(3f, spring(dampingRatio = 0.8f))
-                                          onZoomChanged(3f)
-                                      }
-                                  }
-                              },
-                              onTap = { showOverlay = !showOverlay }
-                          )
+              var showInfoSheet by remember { mutableStateOf(false) }
+          
+              if (media.isVideo) {
+                  // ==================== VIDEO BRANCH (NO PARENT POINTER INTERCEPTION) ====================
+                  val exoPlayer = remember(media.uri) {
+                      ExoPlayer.Builder(context).build().apply {
+                          setMediaItem(MediaItem.fromUri(media.uri))
+                          prepare()
+                          playWhenReady = true
                       }
-                      .pointerInput(Unit) {
-                          detectTransformGestures { _, pan, zoom, _ ->
-                              scope.launch {
-                                  val nextScale = (scale.value * zoom).coerceIn(1f, 5f)
-                                  scale.snapTo(nextScale)
-                                  onZoomChanged(nextScale)
-                                  if (nextScale > 1f) {
-                                      offset += pan
-                                  } else {
-                                      offset = Offset.Zero
-                                  }
-                              }
-                          }
+                  }
+          
+                  val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+                  DisposableEffect(lifecycleOwner, exoPlayer) {
+                      val observer = LifecycleEventObserver { _, event ->
+                          if (event == Lifecycle.Event.ON_RESUME) exoPlayer.play()
+                          else if (event == Lifecycle.Event.ON_PAUSE) exoPlayer.pause()
                       }
-
-                  if (media.isVideo) {
-                      val exoPlayer = remember(media.uri) {
-                          ExoPlayer.Builder(context).build().apply {
-                              setMediaItem(MediaItem.fromUri(media.uri))
-                              prepare()
-                              playWhenReady = true
-                          }
+                      lifecycleOwner.lifecycle.addObserver(observer)
+                      onDispose {
+                          lifecycleOwner.lifecycle.removeObserver(observer)
+                          exoPlayer.release()
                       }
-
-                      val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
-                      DisposableEffect(lifecycleOwner, exoPlayer) {
-                          val observer = LifecycleEventObserver { _, event ->
-                              if (event == Lifecycle.Event.ON_RESUME) exoPlayer.play()
-                              else if (event == Lifecycle.Event.ON_PAUSE) exoPlayer.pause()
-                          }
-                          lifecycleOwner.lifecycle.addObserver(observer)
-                          onDispose {
-                              lifecycleOwner.lifecycle.removeObserver(observer)
-                              exoPlayer.release()
-                          }
-                      }
-
+                  }
+          
+                  Box(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .background(Color.Black),
+                      contentAlignment = Alignment.Center
+                  ) {
                       AndroidView(
                           factory = { ctx ->
                               PlayerView(ctx).apply {
                                   player = exoPlayer
                                   useController = true
+                                  resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                                   layoutParams = ViewGroup.LayoutParams(
                                       ViewGroup.LayoutParams.MATCH_PARENT,
                                       ViewGroup.LayoutParams.MATCH_PARENT
                                   )
                               }
                           },
-                          modifier = viewerModifier
+                          modifier = Modifier.fillMaxSize()
                       )
-                  } else {
-                      AsyncImage(
-                          model = ImageRequest.Builder(context).data(media.uri).crossfade(true).build(),
-                          contentDescription = null,
-                          contentScale = ContentScale.Fit,
-                          modifier = viewerModifier
-                      )
-                  }
-
-                  if (showOverlay && scale.value == 1f) {
+          
+                      // Back button always visible for video
+                      IconButton(
+                          onClick = onBack,
+                          modifier = Modifier
+                              .align(Alignment.TopStart)
+                              .padding(top = 40.dp, start = 16.dp)
+                              .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                      ) {
+                          Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                      }
+          
                       MediaViewerOverlay(
+                          media = media,
                           onClose = onBack,
                           onFavorite = {
                               isFavoritedLocal = it
                               onFavoriteToggle(it)
                           },
+                          onInfoClick = { showInfoSheet = true },
                           isFavorite = isFavoritedLocal,
                           modifier = Modifier.align(Alignment.BottomCenter)
                       )
                   }
+              } else {
+                  // ==================== IMAGE BRANCH (FULL PINCH/PAN + SWIPE UP) ====================
+                  Box(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .background(Color.Black),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      val imageGestureModifier = Modifier
+                          .fillMaxSize()
+                          .graphicsLayer(
+                              scaleX = scale.value,
+                              scaleY = scale.value,
+                              translationX = offset.x,
+                              translationY = offset.y
+                          )
+                          .pointerInput(Unit) {
+                              detectTapGestures(
+                                  onDoubleTap = {
+                                      scope.launch {
+                                          if (scale.value > 1f) {
+                                              scale.animateTo(1f, spring(dampingRatio = 0.8f))
+                                              offset = Offset.Zero
+                                              onZoomChanged(1f)
+                                          } else {
+                                              scale.animateTo(3f, spring(dampingRatio = 0.8f))
+                                              onZoomChanged(3f)
+                                          }
+                                      }
+                                  },
+                                  onTap = { showOverlay = !showOverlay }
+                              )
+                          }
+                          .pointerInput(Unit) {
+                              detectTransformGestures { _, pan, zoom, _ ->
+                                  scope.launch {
+                                      val nextScale = (scale.value * zoom).coerceIn(1f, 5f)
+                                      scale.snapTo(nextScale)
+                                      onZoomChanged(nextScale)
+                                      if (nextScale > 1f) {
+                                          offset += pan
+                                      } else {
+                                          offset = Offset.Zero
+                                      }
+                                  }
+                              }
+                          }
+                          .pointerInput(Unit) {
+                              detectVerticalDragGestures { change, dragAmount ->
+                                  if (scale.value == 1f && dragAmount < -40f) {
+                                      change.consume()
+                                      showInfoSheet = true
+                                  }
+                              }
+                          }
+          
+                      AsyncImage(
+                          model = ImageRequest.Builder(context).data(media.uri).crossfade(true).build(),
+                          contentDescription = null,
+                          contentScale = ContentScale.Fit,
+                          modifier = imageGestureModifier
+                      )
+          
+                      // Use tolerance instead of exact float equality
+                      AnimatedVisibility(
+                          visible = showOverlay && scale.value <= 1.05f,
+                          enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it / 2 },
+                          exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { it / 2 },
+                          modifier = Modifier.align(Alignment.BottomCenter)
+                      ) {
+                          MediaViewerOverlay(
+                              media = media,
+                              onClose = onBack,
+                              onFavorite = {
+                                  isFavoritedLocal = it
+                                  onFavoriteToggle(it)
+                              },
+                              onInfoClick = { showInfoSheet = true },
+                              isFavorite = isFavoritedLocal,
+                              modifier = Modifier
+                          )
+                      }
+                      
+                      // Back button with animated visibility
+                      AnimatedVisibility(
+                          visible = showOverlay && scale.value <= 1.05f,
+                          enter = fadeIn(tween(200)) + slideInVertically(tween(300)) { -it },
+                          exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { -it },
+                          modifier = Modifier.align(Alignment.TopStart)
+                      ) {
+                          IconButton(
+                              onClick = onBack,
+                              modifier = Modifier
+                                  .padding(top = 40.dp, start = 16.dp)
+                                  .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                          ) {
+                              Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                          }
+                      }
+                  }
+              }
+          
+              if (showInfoSheet) {
+                  MediaInfoBottomSheet(media = media, onDismiss = { showInfoSheet = false })
               }
           }
-
+          
+          // ==================== MEDIA VIEWER OVERLAY ====================
+          
           @Composable
           fun MediaViewerOverlay(
+              media: Media,
               onClose: () -> Unit,
               onFavorite: (Boolean) -> Unit,
+              onInfoClick: () -> Unit,
               isFavorite: Boolean,
               modifier: Modifier = Modifier
           ) {
               val haptic = LocalHapticFeedback.current
+              val context = LocalContext.current
               val hazeState = remember { HazeState() }
               Box(
                   modifier = modifier
@@ -746,40 +1017,149 @@ jobs:
                       horizontalArrangement = Arrangement.SpaceEvenly,
                       verticalAlignment = Alignment.CenterVertically
                   ) {
+                      // Favorite
                       IconButton(onClick = {
                           haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                           onFavorite(!isFavorite)
                       }) {
                           Icon(
                               if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                              null,
+                              contentDescription = "Favorite",
                               tint = if (isFavorite) Color(0xFFFFD700) else Color.White,
                               modifier = Modifier.size(26.dp)
                           )
                       }
-                      IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) {
-                          Icon(Icons.Default.Share, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                      // Info / Details
+                      IconButton(onClick = {
+                          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                          onInfoClick()
+                      }) {
+                          Icon(Icons.Default.Info, contentDescription = "Details", tint = Color.White, modifier = Modifier.size(26.dp))
                       }
+                      // Share — now actually works!
+                      IconButton(onClick = {
+                          haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                          val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                              type = if (media.isVideo) "video/*" else "image/*"
+                              putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                          }
+                          context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+                      }) {
+                          Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(26.dp))
+                      }
+                      // Close
                       IconButton(onClick = {
                           haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                           onClose()
                       }) {
-                          Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(26.dp))
+                          Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(26.dp))
                       }
                   }
               }
           }
-
+          
+          // ==================== MEDIA INFO BOTTOM SHEET (PHASE 1) ====================
+          
+          @Composable
+          fun MediaInfoBottomSheet(
+              media: Media,
+              onDismiss: () -> Unit
+          ) {
+              val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+              val dateString = remember(media.timestamp) {
+                  val sdf = SimpleDateFormat("dd MMMM yyyy, hh:mm a", Locale.getDefault())
+                  sdf.format(Date(if (media.timestamp > 1000000000000L) media.timestamp else media.timestamp * 1000L))
+              }
+          
+              ModalBottomSheet(
+                  onDismissRequest = onDismiss,
+                  sheetState = sheetState,
+                  containerColor = Color(0xFF141414),
+                  scrimColor = Color.Black.copy(alpha = 0.65f),
+                  shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(24.dp)
+                          .navigationBarsPadding()
+                  ) {
+                      Row(
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Text(
+                              text = "Media Details",
+                              color = Color.White,
+                              fontSize = 20.sp,
+                              fontWeight = FontWeight.Bold
+                          )
+                          Surface(
+                              color = Color(0xFFFFD700).copy(alpha = 0.15f),
+                              shape = RoundedCornerShape(8.dp)
+                          ) {
+                              Text(
+                                  text = if (media.isVideo) "VIDEO" else "IMAGE",
+                                  color = Color(0xFFFFD700),
+                                  fontSize = 11.sp,
+                                  fontWeight = FontWeight.SemiBold,
+                                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                              )
+                          }
+                      }
+          
+                      Spacer(Modifier.height(16.dp))
+                      HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                      Spacer(Modifier.height(16.dp))
+          
+                      InfoRow(label = "File Name", value = media.displayName.ifBlank { "Unknown Name" })
+                      InfoRow(label = "Album", value = media.bucketName)
+                      InfoRow(label = "Date Modified", value = dateString)
+                      InfoRow(label = "Type", value = if (media.isVideo) "Video Playback" else "High-Res Image")
+          
+                      Spacer(Modifier.height(20.dp))
+                      PandeyJiGlow()
+                      Spacer(Modifier.height(10.dp))
+                  }
+              }
+          }
+          
+          @Composable
+          private fun InfoRow(label: String, value: String) {
+              Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                  Text(text = label, color = Color.Gray, fontSize = 12.sp)
+                  Text(text = value, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+              }
+          }
+          
+          // ==================== KSU STYLE FLOATING BUTTON ====================
+          
           @Composable
           fun KSUStyleFloatingButton(modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
               val haptic = LocalHapticFeedback.current
+              val infiniteTransition = rememberInfiniteTransition(label = "fab_glow")
+              val glowScale by infiniteTransition.animateFloat(
+                  initialValue = 1f,
+                  targetValue = 1.08f,
+                  animationSpec = infiniteRepeatable(tween(1200, easing = EaseInOutCubic), RepeatMode.Reverse),
+                  label = "glowScale"
+              )
+              val glowAlpha by infiniteTransition.animateFloat(
+                  initialValue = 0.15f,
+                  targetValue = 0.35f,
+                  animationSpec = infiniteRepeatable(tween(1200, easing = EaseInOutCubic), RepeatMode.Reverse),
+                  label = "glowAlpha"
+              )
               Box(
                   modifier = modifier
                       .padding(16.dp)
                       .size(56.dp)
-                      .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFFFFD700))
+                      .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
+                      .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFFFFD700).copy(alpha = glowAlpha))
                       .background(Color(0xFF1A1A1A), RoundedCornerShape(20.dp))
-                      .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                      .border(1.dp, Color(0xFFFFD700).copy(alpha = glowAlpha), RoundedCornerShape(20.dp))
                       .clickable {
                           haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                           onClick()
@@ -789,11 +1169,43 @@ jobs:
                   Icon(Icons.Default.Star, contentDescription = "Studio", tint = Color(0xFFFFD700), modifier = Modifier.size(26.dp))
               }
           }
-
+          
+          // ==================== DUMMY SCREEN ====================
+          
           @Composable
           fun DummyScreen(screen: String, hazeState: HazeState) {
+              val infiniteTransition = rememberInfiniteTransition(label = "dummy_float")
+              val floatY by infiniteTransition.animateFloat(
+                  initialValue = 0f,
+                  targetValue = -12f,
+                  animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOutCubic), RepeatMode.Reverse),
+                  label = "floatY"
+              )
+              val iconAlpha by infiniteTransition.animateFloat(
+                  initialValue = 0.35f,
+                  targetValue = 0.65f,
+                  animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOutCubic), RepeatMode.Reverse),
+                  label = "iconAlpha"
+              )
               Box(modifier = Modifier.fillMaxSize().haze(state = hazeState), contentAlignment = Alignment.Center) {
-                  Text("$screen Screen - Coming Soon", color = Color.White, fontSize = 20.sp)
+                  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                      Icon(
+                          when (screen) {
+                              "EXPLORE" -> Icons.Default.Search
+                              "AI STUDIO" -> Icons.Default.Edit
+                              "VAULT" -> Icons.Default.Lock
+                              else -> Icons.Default.Home
+                          },
+                          contentDescription = null,
+                          tint = Color(0xFFFFD700).copy(alpha = iconAlpha),
+                          modifier = Modifier
+                              .size(48.dp)
+                              .graphicsLayer(translationY = floatY)
+                      )
+                      Spacer(Modifier.height(12.dp))
+                      Text(screen, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                      Text("Coming Soon ✨", color = Color.White.copy(alpha = 0.5f), fontSize = 14.sp)
+                  }
               }
           }
           EOF
@@ -801,7 +1213,7 @@ jobs:
           # MainActivity.kt
           cat << 'EOF' > app/src/main/java/com/pandeyji/aura/gallery/MainActivity.kt
           package com.pandeyji.aura.gallery
-
+          
           import android.Manifest
           import android.app.Activity
           import android.content.pm.PackageManager
@@ -830,18 +1242,18 @@ jobs:
           import dev.chrisbanes.haze.HazeState
           import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.withContext
-
+          
           class MainActivity : ComponentActivity() {
-
+          
               private val permissionLauncher = registerForActivityResult(
                   ActivityResultContracts.RequestMultiplePermissions()
               ) { permissions ->
                   val isGranted = permissions.values.any { it }
                   onPermissionResult?.invoke(isGranted)
               }
-
+          
               private var onPermissionResult: ((Boolean) -> Unit)? = null
-
+          
               private fun requestPermissions() {
                   val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                       arrayOf(
@@ -853,16 +1265,17 @@ jobs:
                   }
                   permissionLauncher.launch(permissions)
               }
-
+          
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+          
                   val hasPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                       ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
                       ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED
                   } else {
                       ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
                   }
-
+          
                   setContent {
                       AuraGalleryApp(
                           hasInitialPermission = hasPermission,
@@ -874,7 +1287,7 @@ jobs:
                   }
               }
           }
-
+          
           @Composable
           fun AuraGalleryApp(
               hasInitialPermission: Boolean,
@@ -889,9 +1302,12 @@ jobs:
               var blurVal by remember { mutableFloatStateOf(35f) }
               val gridState = rememberLazyGridState()
               var viewMode by remember { mutableStateOf(ViewMode.ALL_MEDIA) }
+              var selectedAlbum by remember { mutableStateOf<Album?>(null) }
+              var searchQuery by remember { mutableStateOf("") }
               val hazeState = remember { HazeState() }
               val context = LocalContext.current
-
+          
+              // Immersive fullscreen mode for media viewer
               val view = LocalView.current
               val window = (context as Activity).window
               DisposableEffect(isFullScreen) {
@@ -909,7 +1325,8 @@ jobs:
                       insetsController.show(WindowInsetsCompat.Type.systemBars())
                   }
               }
-
+          
+              // Load media on background thread to avoid UI freeze
               LaunchedEffect(hasPerm) {
                   if (hasPerm) {
                       withContext(Dispatchers.IO) {
@@ -932,7 +1349,7 @@ jobs:
                               ),
                               "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
                           )
-
+          
                           cursor?.use {
                               val idCol = it.getColumnIndex(MediaStore.Files.FileColumns._ID)
                               val typeCol = it.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE)
@@ -940,7 +1357,7 @@ jobs:
                               val bucketNameCol = it.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
                               val dateCol = it.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
                               val nameCol = it.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-
+          
                               while (it.moveToNext()) {
                                   val id = it.getLong(idCol)
                                   val type = it.getInt(typeCol)
@@ -948,13 +1365,13 @@ jobs:
                                   val bucketName = it.getString(bucketNameCol) ?: "Camera"
                                   val timestamp = it.getLong(dateCol)
                                   val displayName = it.getString(nameCol) ?: ""
-
+          
                                   val uri = if (type == MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) {
                                       MediaStore.Images.Media.EXTERNAL_CONTENT_URI.buildUpon().appendPath(id.toString()).build().toString()
                                   } else {
                                       MediaStore.Video.Media.EXTERNAL_CONTENT_URI.buildUpon().appendPath(id.toString()).build().toString()
                                   }
-
+          
                                   media.add(
                                       Media(
                                           uri = uri,
@@ -965,7 +1382,7 @@ jobs:
                                           displayName = displayName
                                       )
                                   )
-
+          
                                   if (!albums.containsKey(bucketId)) {
                                       albums[bucketId] = Album(bucketId, bucketName, uri, 1, timestamp)
                                   } else {
@@ -978,7 +1395,16 @@ jobs:
                       }
                   }
               }
-
+          
+              // Compute filtered media based on search query
+              val filteredMedia = remember(mediaList, searchQuery) {
+                  if (searchQuery.isBlank()) mediaList
+                  else mediaList.filter { media ->
+                      media.displayName.contains(searchQuery, ignoreCase = true) ||
+                      media.bucketName.contains(searchQuery, ignoreCase = true)
+                  }
+              }
+          
               if (!hasPerm) {
                   AlertDialog(
                       onDismissRequest = { },
@@ -997,14 +1423,19 @@ jobs:
                   )
               } else {
                   Box(modifier = Modifier.fillMaxSize().background(Color(0xFF050505))) {
-                      if (isFullScreen && mediaList.isNotEmpty()) {
+                      if (isFullScreen && filteredMedia.isNotEmpty()) {
                           MediaPagerScreen(
-                              mediaList = mediaList,
+                              mediaList = filteredMedia,
                               initialIndex = selIndex,
                               onBack = { isFullScreen = false },
                               onFavoriteToggle = { index, isFav ->
-                                  mediaList = mediaList.toMutableList().apply {
-                                      this[index] = this[index].copy(isFavorite = isFav)
+                                  // Find the actual index in the original mediaList
+                                  val actualMedia = filteredMedia[index]
+                                  val actualIndex = mediaList.indexOf(actualMedia)
+                                  if (actualIndex >= 0) {
+                                      mediaList = mediaList.toMutableList().apply {
+                                          this[actualIndex] = this[actualIndex].copy(isFavorite = isFav)
+                                      }
                                   }
                               }
                           )
@@ -1014,7 +1445,7 @@ jobs:
                               containerColor = Color(0xFF050505)
                           ) { innerPadding ->
                               Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                                  if (screen == "GALLERY") {
+                                  if (screen == "GALLERY" && viewMode != ViewMode.ALBUM_DETAIL) {
                                       AlbumFilterChips(
                                           currentMode = viewMode,
                                           onModeChange = { viewMode = it },
@@ -1025,15 +1456,24 @@ jobs:
                                   }
                                   when (screen) {
                                       "GALLERY" -> GalleryGrid(
-                                          mediaList = mediaList,
+                                          mediaList = filteredMedia,
                                           hasPerm = hasPerm,
                                           hazeState = hazeState,
                                           gridState = gridState,
                                           viewMode = viewMode,
                                           albums = albumList,
+                                          selectedAlbum = selectedAlbum,
                                           onMediaClick = { idx ->
                                               selIndex = idx
                                               isFullScreen = true
+                                          },
+                                          onAlbumClick = { album ->
+                                              selectedAlbum = album
+                                              viewMode = ViewMode.ALBUM_DETAIL
+                                          },
+                                          onBackFromAlbum = {
+                                              selectedAlbum = null
+                                              viewMode = ViewMode.ALBUMS
                                           }
                                       )
                                       "EXPLORE" -> DummyScreen("EXPLORE", hazeState)
@@ -1048,7 +1488,7 @@ jobs:
                                       isScrolling = gridState.isScrollInProgress,
                                       modifier = Modifier.align(Alignment.TopCenter),
                                       onProfileClick = { screen = if (screen == "SETTINGS") "GALLERY" else "SETTINGS" },
-                                      onSearchChange = { }
+                                      onSearchChange = { query -> searchQuery = query }
                                   )
                                   BottomDock(
                                       screen = screen,
@@ -1059,9 +1499,11 @@ jobs:
                                       onScreenChange = {
                                           screen = it
                                           viewMode = ViewMode.ALL_MEDIA
+                                          selectedAlbum = null
+                                          searchQuery = ""
                                       }
                                   )
-                                  if (screen == "GALLERY") {
+                                  if (screen == "GALLERY" && viewMode != ViewMode.ALBUM_DETAIL) {
                                       KSUStyleFloatingButton(
                                           modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 90.dp),
                                           onClick = { }
@@ -1074,6 +1516,7 @@ jobs:
               }
           }
           EOF
+
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

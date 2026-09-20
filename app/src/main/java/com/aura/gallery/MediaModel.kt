@@ -1,6 +1,4 @@
-package com.pnadeyJi.aura.gallery
-
-import android.net.Uri
+package com.pandeyji.aura.gallery
 
 data class Media(
     val uri: String,
@@ -23,11 +21,6 @@ data class Album(
 enum class ViewMode {
     ALL_MEDIA,
     ALBUMS,
+    ALBUM_DETAIL,
     FAVORITES
 }
-
-data class AppSettings(
-    val blurLevel: Float = 30f,
-    val isVaultEnabled: Boolean = false,
-    val vaultPin: String = ""
-)

@@ -5,6 +5,8 @@
 
 package com.pandeyji.aura.gallery
 
+import android.content.Intent
+import android.net.Uri
 import android.view.ViewGroup
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -28,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -78,14 +81,20 @@ fun TopBar(
     val haptic = LocalHapticFeedback.current
     val offsetY by animateDpAsState(
         targetValue = if (isScrolling) (-100).dp else 0.dp,
-        animationSpec = tween(300),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
         label = "topBarSlide"
+    )
+    val topBarAlpha by animateFloatAsState(
+        targetValue = if (isScrolling) 0f else 1f,
+        animationSpec = tween(250),
+        label = "topBarAlpha"
     )
     var searchQuery by remember { mutableStateOf("") }
 
     Box(
         modifier = modifier
             .offset(y = offsetY)
+            .graphicsLayer(alpha = topBarAlpha)
             .padding(top = 16.dp, start = 20.dp, end = 20.dp)
             .fillMaxWidth()
             .height(56.dp)
@@ -114,7 +123,7 @@ fun TopBar(
                     searchQuery = it
                     onSearchChange(it)
                 },
-                placeholder = { Text("Smart Search...", color = Color.Gray, fontSize = 14.sp) },
+                placeholder = { Text("Search photos, albums...", color = Color.Gray, fontSize = 14.sp) },
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 8.dp),
@@ -127,6 +136,17 @@ fun TopBar(
                 textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
                 singleLine = true
             )
+            // Clear button when search is active
+            if (searchQuery.isNotEmpty()) {
+                IconButton(
+                    onClick = {
+                        searchQuery = ""
+                        onSearchChange("")
+                    }
+                ) {
+                    Icon(Icons.Default.Clear, null, tint = Color.Gray, modifier = Modifier.size(18.dp))
+                }
+            }
             IconButton(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -202,13 +222,19 @@ fun BottomDock(
     val haptic = LocalHapticFeedback.current
     val offsetY by animateDpAsState(
         targetValue = if (isScrolling) 100.dp else 0.dp,
-        animationSpec = tween(300),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
         label = "bottomDockSlide"
+    )
+    val dockAlpha by animateFloatAsState(
+        targetValue = if (isScrolling) 0f else 1f,
+        animationSpec = tween(250),
+        label = "dockAlpha"
     )
 
     Box(
         modifier = modifier
             .offset(y = offsetY)
+            .graphicsLayer(alpha = dockAlpha)
             .padding(bottom = 20.dp, start = 24.dp, end = 24.dp)
             .fillMaxWidth()
             .height(68.dp)
@@ -254,13 +280,35 @@ fun DockButton(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    val scale by animateFloatAsState(if (isActive) 1.2f else 1f, label = "scale")
+    val scale by animateFloatAsState(
+        targetValue = if (isActive) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "scale"
+    )
     val tint by animateColorAsState(
-        if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+        targetValue = if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+        animationSpec = tween(300),
         label = "tint"
     )
-    IconButton(onClick = onClick, modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+    val labelAlpha by animateFloatAsState(
+        targetValue = if (isActive) 1f else 0.5f,
+        animationSpec = tween(300),
+        label = "labelAlpha"
+    )
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        }
+        Text(
+            text = label,
+            color = tint.copy(alpha = labelAlpha),
+            fontSize = 9.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            modifier = Modifier.offset(y = (-8).dp)
+        )
     }
 }
 
@@ -313,7 +361,10 @@ fun GalleryGrid(
     gridState: LazyGridState,
     viewMode: ViewMode,
     albums: List<Album>,
-    onMediaClick: (Int) -> Unit
+    selectedAlbum: Album?,
+    onMediaClick: (Int) -> Unit,
+    onAlbumClick: (Album) -> Unit,
+    onBackFromAlbum: () -> Unit
 ) {
     when (viewMode) {
         ViewMode.ALL_MEDIA -> {
@@ -327,23 +378,7 @@ fun GalleryGrid(
                     contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp)
                 ) {
                     itemsIndexed(mediaList) { index, media ->
-                        Box(
-                            modifier = Modifier
-                                .aspectRatio(1f)
-                                .padding(1.dp)
-                                .clickable { onMediaClick(index) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(media.uri).crossfade(true).build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            if (media.isVideo) {
-                                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(24.dp).shadow(4.dp))
-                            }
-                        }
+                        MediaGridItem(media = media, onClick = { onMediaClick(index) })
                     }
                 }
             }
@@ -354,14 +389,68 @@ fun GalleryGrid(
                 modifier = Modifier.fillMaxSize().haze(state = hazeState),
                 contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp, start = 8.dp, end = 8.dp)
             ) {
-                items(albums.size) { index -> AlbumCard(albums[index]) }
+                items(albums.size) { index ->
+                    AlbumCard(
+                        album = albums[index],
+                        onClick = { onAlbumClick(albums[index]) }
+                    )
+                }
+            }
+        }
+        ViewMode.ALBUM_DETAIL -> {
+            val albumMedia = mediaList.filter { it.bucketId == selectedAlbum?.bucketId }
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Album detail header with back button
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 80.dp, start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBackFromAlbum) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                        Text(
+                            text = selectedAlbum?.bucketName ?: "Album",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${albumMedia.size} items",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier.fillMaxSize().haze(state = hazeState),
+                    contentPadding = PaddingValues(bottom = 100.dp)
+                ) {
+                    itemsIndexed(albumMedia) { _, media ->
+                        val originalIndex = mediaList.indexOf(media)
+                        MediaGridItem(media = media, onClick = { onMediaClick(originalIndex) })
+                    }
+                }
             }
         }
         ViewMode.FAVORITES -> {
             val favorites = mediaList.filter { it.isFavorite }
             if (favorites.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().haze(state = hazeState), contentAlignment = Alignment.Center) {
-                    Text("No favorites yet", color = Color.White.copy(alpha = 0.5f))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text("No favorites yet", color = Color.White.copy(alpha = 0.5f))
+                        Text("Tap ❤️ on any photo to add it here", color = Color.White.copy(alpha = 0.3f), fontSize = 12.sp)
+                    }
                 }
             } else {
                 LazyVerticalGrid(
@@ -369,12 +458,13 @@ fun GalleryGrid(
                     modifier = Modifier.fillMaxSize().haze(state = hazeState),
                     contentPadding = PaddingValues(top = 80.dp, bottom = 100.dp)
                 ) {
-                    itemsIndexed(favorites) { index, media ->
+                    itemsIndexed(favorites) { _, media ->
+                        val originalIndex = mediaList.indexOf(media)
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
                                 .padding(1.dp)
-                                .clickable { onMediaClick(mediaList.indexOf(media)) },
+                                .clickable { onMediaClick(originalIndex) },
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
@@ -383,7 +473,15 @@ fun GalleryGrid(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            Icon(Icons.Default.Favorite, null, tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp).shadow(4.dp))
+                            Icon(
+                                Icons.Default.Favorite,
+                                null,
+                                tint = Color(0xFFFFD700),
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                            )
                         }
                     }
                 }
@@ -392,23 +490,73 @@ fun GalleryGrid(
     }
 }
 
+// ==================== MEDIA GRID ITEM ====================
+
+@Composable
+private fun MediaGridItem(media: Media, onClick: () -> Unit) {
+    val itemAlpha = remember { Animatable(0f) }
+    val itemScale = remember { Animatable(0.92f) }
+    LaunchedEffect(Unit) {
+        launch { itemAlpha.animateTo(1f, tween(350)) }
+        launch { itemScale.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
+    }
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .padding(1.dp)
+            .graphicsLayer(alpha = itemAlpha.value, scaleX = itemScale.value, scaleY = itemScale.value)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current).data(media.uri).crossfade(true).build(),
+            contentDescription = media.displayName,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (media.isVideo) {
+            // Semi-transparent background for better visibility
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(32.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
 // ==================== ALBUM CARD ====================
 
 @Composable
-fun AlbumCard(album: Album) {
+fun AlbumCard(album: Album, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(6.dp).clip(RoundedCornerShape(14.dp)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF181818))
     ) {
         Column {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current).data(album.thumbnailUri).crossfade(true).build(),
-                contentDescription = null,
+                contentDescription = album.bucketName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().height(140.dp)
             )
             Column(modifier = Modifier.padding(10.dp)) {
-                Text(album.bucketName, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    album.bucketName,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text("${album.count} items", color = Color.Gray, fontSize = 11.sp)
             }
         }
@@ -444,6 +592,29 @@ fun MediaPagerScreen(
                 }
             }
         )
+    }
+
+    // Animated page indicator
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 48.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        AnimatedVisibility(
+            visible = mediaList.size > 1,
+            enter = fadeIn(tween(400)),
+            exit = fadeOut(tween(300))
+        ) {
+            Text(
+                text = "${pagerState.currentPage + 1} / ${mediaList.size}",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
     }
 }
 
@@ -509,29 +680,28 @@ fun MediaViewer(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Minimal overlay for back button and info during video playback
-            if (showOverlay) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(top = 40.dp, start = 16.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                }
-
-                MediaViewerOverlay(
-                    onClose = onBack,
-                    onFavorite = {
-                        isFavoritedLocal = it
-                        onFavoriteToggle(it)
-                    },
-                    onInfoClick = { showInfoSheet = true },
-                    isFavorite = isFavoritedLocal,
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                )
+            // Back button always visible for video
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 40.dp, start = 16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
             }
+
+            MediaViewerOverlay(
+                media = media,
+                onClose = onBack,
+                onFavorite = {
+                    isFavoritedLocal = it
+                    onFavoriteToggle(it)
+                },
+                onInfoClick = { showInfoSheet = true },
+                isFavorite = isFavoritedLocal,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     } else {
         // ==================== IMAGE BRANCH (FULL PINCH/PAN + SWIPE UP) ====================
@@ -596,8 +766,15 @@ fun MediaViewer(
                 modifier = imageGestureModifier
             )
 
-            if (showOverlay && scale.value == 1f) {
+            // Use tolerance instead of exact float equality
+            AnimatedVisibility(
+                visible = showOverlay && scale.value <= 1.05f,
+                enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it / 2 },
+                exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { it / 2 },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
                 MediaViewerOverlay(
+                    media = media,
                     onClose = onBack,
                     onFavorite = {
                         isFavoritedLocal = it
@@ -605,8 +782,25 @@ fun MediaViewer(
                     },
                     onInfoClick = { showInfoSheet = true },
                     isFavorite = isFavoritedLocal,
-                    modifier = Modifier.align(Alignment.BottomCenter)
+                    modifier = Modifier
                 )
+            }
+            
+            // Back button with animated visibility
+            AnimatedVisibility(
+                visible = showOverlay && scale.value <= 1.05f,
+                enter = fadeIn(tween(200)) + slideInVertically(tween(300)) { -it },
+                exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { -it },
+                modifier = Modifier.align(Alignment.TopStart)
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .padding(top = 40.dp, start = 16.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
             }
         }
     }
@@ -620,6 +814,7 @@ fun MediaViewer(
 
 @Composable
 fun MediaViewerOverlay(
+    media: Media,
     onClose: () -> Unit,
     onFavorite: (Boolean) -> Unit,
     onInfoClick: () -> Unit,
@@ -627,6 +822,7 @@ fun MediaViewerOverlay(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
     val hazeState = remember { HazeState() }
     Box(
         modifier = modifier
@@ -644,6 +840,7 @@ fun MediaViewerOverlay(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Favorite
             IconButton(onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 onFavorite(!isFavorite)
@@ -655,15 +852,26 @@ fun MediaViewerOverlay(
                     modifier = Modifier.size(26.dp)
                 )
             }
+            // Info / Details
             IconButton(onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 onInfoClick()
             }) {
                 Icon(Icons.Default.Info, contentDescription = "Details", tint = Color.White, modifier = Modifier.size(26.dp))
             }
-            IconButton(onClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) {
+            // Share — now actually works!
+            IconButton(onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = if (media.isVideo) "video/*" else "image/*"
+                    putExtra(Intent.EXTRA_STREAM, Uri.parse(media.uri))
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(shareIntent, "Share via"))
+            }) {
                 Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White, modifier = Modifier.size(26.dp))
             }
+            // Close
             IconButton(onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClose()
@@ -754,13 +962,27 @@ private fun InfoRow(label: String, value: String) {
 @Composable
 fun KSUStyleFloatingButton(modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     val haptic = LocalHapticFeedback.current
+    val infiniteTransition = rememberInfiniteTransition(label = "fab_glow")
+    val glowScale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = EaseInOutCubic), RepeatMode.Reverse),
+        label = "glowScale"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.15f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = EaseInOutCubic), RepeatMode.Reverse),
+        label = "glowAlpha"
+    )
     Box(
         modifier = modifier
             .padding(16.dp)
             .size(56.dp)
-            .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFFFFD700))
+            .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
+            .shadow(16.dp, RoundedCornerShape(20.dp), spotColor = Color(0xFFFFD700).copy(alpha = glowAlpha))
             .background(Color(0xFF1A1A1A), RoundedCornerShape(20.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+            .border(1.dp, Color(0xFFFFD700).copy(alpha = glowAlpha), RoundedCornerShape(20.dp))
             .clickable {
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClick()
@@ -775,7 +997,37 @@ fun KSUStyleFloatingButton(modifier: Modifier = Modifier, onClick: () -> Unit = 
 
 @Composable
 fun DummyScreen(screen: String, hazeState: HazeState) {
+    val infiniteTransition = rememberInfiniteTransition(label = "dummy_float")
+    val floatY by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = -12f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOutCubic), RepeatMode.Reverse),
+        label = "floatY"
+    )
+    val iconAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.65f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = EaseInOutCubic), RepeatMode.Reverse),
+        label = "iconAlpha"
+    )
     Box(modifier = Modifier.fillMaxSize().haze(state = hazeState), contentAlignment = Alignment.Center) {
-        Text("$screen Screen - Coming Soon", color = Color.White, fontSize = 20.sp)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                when (screen) {
+                    "EXPLORE" -> Icons.Default.Search
+                    "AI STUDIO" -> Icons.Default.Edit
+                    "VAULT" -> Icons.Default.Lock
+                    else -> Icons.Default.Home
+                },
+                contentDescription = null,
+                tint = Color(0xFFFFD700).copy(alpha = iconAlpha),
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer(translationY = floatY)
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(screen, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Coming Soon ✨", color = Color.White.copy(alpha = 0.5f), fontSize = 14.sp)
+        }
     }
 }
