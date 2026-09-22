@@ -154,7 +154,7 @@ object WallpaperHelper {
             val inputStream = context.contentResolver.openInputStream(Uri.parse(uri))
             val wallpaperManager = WallpaperManager.getInstance(context)
             inputStream?.use { wallpaperManager.setStream(it) }
-        } catch (_: Exception) { }
+        } catch (e: Exception) { }
     }
 }
 
@@ -292,32 +292,32 @@ fun AuraGalleryApp(
                         MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME,
                         MediaStore.Files.FileColumns.DATE_MODIFIED,
                         MediaStore.Files.FileColumns.DISPLAY_NAME,
-                        MediaStore.Files.FileColumns.SIZE,
-                        MediaStore.Files.FileColumns.WIDTH,
-                        MediaStore.Files.FileColumns.HEIGHT,
-                        MediaStore.Files.FileColumns.MIME_TYPE,
-                        MediaStore.Files.FileColumns.DURATION
+                        MediaStore.MediaColumns.SIZE,
+                        MediaStore.MediaColumns.WIDTH,
+                        MediaStore.MediaColumns.HEIGHT,
+                        MediaStore.MediaColumns.MIME_TYPE,
+                        MediaStore.MediaColumns.DURATION
                     ),
                     "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ? OR ${MediaStore.Files.FileColumns.MEDIA_TYPE} = ?",
                     arrayOf(
                         MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
                         MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
                     ),
-                    "${MediaStore.Files.FileColumns.DATE_MODIFIED} DESC"
+                    "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
                 )
 
                 cursor?.use {
-                    val idCol = it.getColumnIndex(MediaStore.Files.FileColumns._ID)
+                    val idCol = it.getColumnIndex(MediaStore.MediaColumns._ID)
                     val typeCol = it.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE)
-                    val bucketIdCol = it.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
-                    val bucketNameCol = it.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
-                    val dateCol = it.getColumnIndex(MediaStore.Files.FileColumns.DATE_MODIFIED)
-                    val nameCol = it.getColumnIndex(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                    val sizeCol = it.getColumnIndex(MediaStore.Files.FileColumns.SIZE)
-                    val widthCol = it.getColumnIndex(MediaStore.Files.FileColumns.WIDTH)
-                    val heightCol = it.getColumnIndex(MediaStore.Files.FileColumns.HEIGHT)
-                    val mimeCol = it.getColumnIndex(MediaStore.Files.FileColumns.MIME_TYPE)
-                    val durationCol = it.getColumnIndex(MediaStore.Files.FileColumns.DURATION)
+                    val bucketIdCol = it.getColumnIndex(MediaStore.MediaColumns.BUCKET_ID)
+                    val bucketNameCol = it.getColumnIndex(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+                    val dateCol = it.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    val nameCol = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                    val sizeCol = it.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                    val widthCol = it.getColumnIndex(MediaStore.MediaColumns.WIDTH)
+                    val heightCol = it.getColumnIndex(MediaStore.MediaColumns.HEIGHT)
+                    val mimeCol = it.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+                    val durationCol = it.getColumnIndex(MediaStore.MediaColumns.DURATION)
 
                     while (it.moveToNext()) {
                         val id = it.getLong(idCol)

@@ -234,9 +234,9 @@ fun SelectionBar(
                     onSelectAll()
                 }) {
                     Icon(
-                        if (selectedCount == totalCount) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        Icons.Default.CheckCircle,
                         contentDescription = "Select All",
-                        tint = if (selectedCount == totalCount) Color(0xFFFFD700) else Color.White
+                        tint = if (selectedCount == totalCount) Color(0xFFFFD700) else Color.White.copy(alpha = 0.4f)
                     )
                 }
                 // Share selected
@@ -286,7 +286,7 @@ fun SortBottomSheet(
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
             Spacer(Modifier.height(8.dp))
 
-            SortMode.entries.forEach { mode ->
+            SortMode.values().forEach { mode ->
                 val isSelected = currentSort == mode
                 Row(
                     modifier = Modifier
