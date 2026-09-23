@@ -343,6 +343,7 @@ fun AlbumFilterChips(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -446,29 +447,36 @@ fun DockButton(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val scale by animateFloatAsState(
-        targetValue = if (isActive) 1.2f else 1f,
+        targetValue = if (isActive) 1.15f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
         label = "scale"
     )
     val tint by animateColorAsState(
-        targetValue = if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
-        animationSpec = tween(300),
+        targetValue = if (isActive) Color(0xFFFFD700) else Color.White.copy(alpha = 0.65f),
+        animationSpec = tween(250),
         label = "tint"
     )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .graphicsLayer(scaleX = scale, scaleY = scale)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            })
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        IconButton(onClick = onClick) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
-        }
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(2.dp))
         Text(
             text = label,
             color = tint,
-            fontSize = 9.sp,
-            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.offset(y = (-8).dp)
+            fontSize = 10.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal
         )
     }
 }
@@ -772,7 +780,10 @@ private fun MediaGridItem(
             )
             .clip(RoundedCornerShape(4.dp))
             .combinedClickable(
-                onClick = onClick,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     onLongClick()
@@ -781,7 +792,11 @@ private fun MediaGridItem(
         contentAlignment = Alignment.Center
     ) {
         AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(media.uri).crossfade(true).build(),
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(media.uri)
+                .crossfade(true)
+                .size(360, 360)
+                .build(),
             contentDescription = media.displayName,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -859,7 +874,11 @@ fun AlbumCard(album: Album, onClick: () -> Unit) {
     ) {
         Column {
             AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(album.thumbnailUri).crossfade(true).build(),
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(album.thumbnailUri)
+                    .crossfade(true)
+                    .size(400, 300)
+                    .build(),
                 contentDescription = album.bucketName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxWidth().height(140.dp)
@@ -942,6 +961,9 @@ fun MediaViewer(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scale = remember { Animatable(1f) }
+    val dismissDragY = remember { Animatable(0f) }
+    val dismissScale = remember { Animatable(1f) }
+    val backgroundAlpha = remember { Animatable(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var showOverlay by remember { mutableStateOf(true) }
     var isFavoritedLocal by remember { mutableStateOf(isFavorite) }
@@ -1027,47 +1049,96 @@ fun MediaViewer(
             )
         }
     } else {
-        Box(
-            modifier = Modifier.fillMaxSize().background(Color.Black),
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = backgroundAlpha.value.coerceIn(0f, 1f))),
             contentAlignment = Alignment.Center
         ) {
+            val screenWidth = constraints.maxWidth.toFloat()
+            val screenHeight = constraints.maxHeight.toFloat()
+            val isZoomed = scale.value > 1.05f
+
             val imageGestureModifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(scaleX = scale.value, scaleY = scale.value, translationX = offset.x, translationY = offset.y)
+                .graphicsLayer(
+                    scaleX = scale.value * dismissScale.value,
+                    scaleY = scale.value * dismissScale.value,
+                    translationX = offset.x,
+                    translationY = offset.y + dismissDragY.value
+                )
+                .pointerInput(isZoomed) {
+                    if (isZoomed) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scope.launch {
+                                val nextScale = (scale.value * zoom).coerceIn(1f, 5f)
+                                scale.snapTo(nextScale)
+                                onZoomChanged(nextScale)
+                                if (nextScale > 1.05f) {
+                                    val maxX = (screenWidth * (nextScale - 1f) / 2f).coerceAtLeast(0f)
+                                    val maxY = (screenHeight * (nextScale - 1f) / 2f).coerceAtLeast(0f)
+                                    val newX = (offset.x + pan.x).coerceIn(-maxX, maxX)
+                                    val newY = (offset.y + pan.y).coerceIn(-maxY, maxY)
+                                    offset = Offset(newX, newY)
+                                } else {
+                                    offset = Offset.Zero
+                                }
+                            }
+                        }
+                    } else {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                scope.launch {
+                                    if (dismissDragY.value > 160f) {
+                                        launch { dismissDragY.animateTo(screenHeight, tween(180)) }
+                                        launch { backgroundAlpha.animateTo(0f, tween(180)) }
+                                        onBack()
+                                    } else {
+                                        launch { dismissDragY.animateTo(0f, spring(dampingRatio = 0.8f)) }
+                                        launch { dismissScale.animateTo(1f, spring(dampingRatio = 0.8f)) }
+                                        launch { backgroundAlpha.animateTo(1f, spring(dampingRatio = 0.8f)) }
+                                    }
+                                }
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                if (dragAmount > 0 || dismissDragY.value > 0f) {
+                                    change.consume()
+                                    scope.launch {
+                                        val newY = (dismissDragY.value + dragAmount).coerceAtLeast(0f)
+                                        dismissDragY.snapTo(newY)
+                                        val progress = (newY / screenHeight).coerceIn(0f, 1f)
+                                        dismissScale.snapTo(1f - (progress * 0.35f))
+                                        backgroundAlpha.snapTo(1f - (progress * 0.8f))
+                                    }
+                                } else if (dragAmount < -35f && dismissDragY.value == 0f) {
+                                    change.consume()
+                                    showInfoSheet = true
+                                }
+                            }
+                        )
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures(
-                        onDoubleTap = {
+                        onDoubleTap = { tapOffset ->
                             scope.launch {
-                                if (scale.value > 1f) {
+                                if (scale.value > 1.05f) {
                                     scale.animateTo(1f, spring(dampingRatio = 0.8f))
                                     offset = Offset.Zero
                                     onZoomChanged(1f)
                                 } else {
-                                    scale.animateTo(3f, spring(dampingRatio = 0.8f))
-                                    onZoomChanged(3f)
+                                    scale.animateTo(2.8f, spring(dampingRatio = 0.8f))
+                                    val targetX = (screenWidth / 2f - tapOffset.x) * 1.8f
+                                    val targetY = (screenHeight / 2f - tapOffset.y) * 1.8f
+                                    val maxX = (screenWidth * 1.8f) / 2f
+                                    val maxY = (screenHeight * 1.8f) / 2f
+                                    offset = Offset(targetX.coerceIn(-maxX, maxX), targetY.coerceIn(-maxY, maxY))
+                                    onZoomChanged(2.8f)
                                 }
                             }
                         },
                         onTap = { showOverlay = !showOverlay }
                     )
-                }
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scope.launch {
-                            val nextScale = (scale.value * zoom).coerceIn(1f, 5f)
-                            scale.snapTo(nextScale)
-                            onZoomChanged(nextScale)
-                            if (nextScale > 1f) offset += pan else offset = Offset.Zero
-                        }
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures { change, dragAmount ->
-                        if (scale.value == 1f && dragAmount < -40f) {
-                            change.consume()
-                            showInfoSheet = true
-                        }
-                    }
                 }
 
             AsyncImage(
@@ -1079,9 +1150,9 @@ fun MediaViewer(
 
             // Overlay with animated visibility
             AnimatedVisibility(
-                visible = showOverlay && scale.value <= 1.05f,
-                enter = fadeIn(tween(250)) + slideInVertically(tween(300)) { it / 2 },
-                exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { it / 2 },
+                visible = showOverlay && scale.value <= 1.05f && dismissDragY.value < 50f,
+                enter = fadeIn(tween(200)) + slideInVertically(tween(250)) { it / 2 },
+                exit = fadeOut(tween(150)) + slideOutVertically(tween(200)) { it / 2 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
                 MediaViewerOverlay(
@@ -1098,8 +1169,8 @@ fun MediaViewer(
 
             // Back button with animated visibility
             AnimatedVisibility(
-                visible = showOverlay && scale.value <= 1.05f,
-                enter = fadeIn(tween(200)) + slideInVertically(tween(300)) { -it },
+                visible = showOverlay && scale.value <= 1.05f && dismissDragY.value < 50f,
+                enter = fadeIn(tween(200)) + slideInVertically(tween(250)) { -it },
                 exit = fadeOut(tween(200)) + slideOutVertically(tween(250)) { -it },
                 modifier = Modifier.align(Alignment.TopStart)
             ) {
@@ -1200,11 +1271,22 @@ private fun OverlayButton(
     tint: Color = Color.White,
     onClick: () -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
-        }
-        Text(text = label, color = tint.copy(alpha = 0.7f), fontSize = 8.sp)
+    val haptic = LocalHapticFeedback.current
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .defaultMinSize(minWidth = 52.dp, minHeight = 48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onClick()
+            })
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(text = label, color = tint.copy(alpha = 0.85f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
     }
 }
 

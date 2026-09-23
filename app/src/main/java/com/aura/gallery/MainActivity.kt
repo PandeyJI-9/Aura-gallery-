@@ -587,7 +587,7 @@ fun AuraGalleryApp(
                         if (screen == "GALLERY" && viewMode != ViewMode.ALBUM_DETAIL && !isSelectMode) {
                             KSUStyleFloatingButton(
                                 modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 90.dp),
-                                onClick = { }
+                                onClick = { screen = "STUDIO" }
                             )
                         }
                     }
